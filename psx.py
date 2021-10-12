@@ -1,9 +1,6 @@
-import traceback
 import os
 import struct
 import sys
-import png
-import numpy as np
 
 from os import SEEK_SET
 from bmp import write_bmp_file
