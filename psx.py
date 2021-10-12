@@ -3,10 +3,14 @@ import os
 import struct
 import sys
 import png
+import numpy as np
 
 from os import SEEK_SET
 from bmp import write_bmp_file
 from moser import bruijn
+
+PAD_HEX = 8
+name_as_add = False
 
 
 class Mem:
@@ -112,7 +116,7 @@ def decompress_texture(reader, pvr):
             i *= 2
             v32 += 1
 
-    texture_buffer = [0xFF] * (2 * pvr.width * pvr.height)
+    texture_buffer = [0xFF] * (pvr.width * pvr.height)
     cur_texture = reader.tell()
 
     if (actual_height == 0):
@@ -143,12 +147,14 @@ def decompress_texture(reader, pvr):
             cur_width = 0
             if (pvr.width >> 1):
                 while True:
-                    v30 = (bruijn[v20 & cur_height] & 0xFFFFFFFF) | 2 * bruijn[v20 & cur_width] | ((~v20 & (cur_height | cur_width)) << v32)
+                    v30 = bruijn[v20 & cur_height] | 2 * bruijn[v20 & cur_width] | ((~v20 & (cur_height | cur_width)) << v32)
                     v31 = get_v31(reader, cur_texture, v30)
+
                     texture_buffer[cur_height * pvr.width * 2 + cur_width * 2] = v31.r
                     texture_buffer[cur_height * pvr.width * 2 + cur_width * 2 + 1] = v31.b
                     texture_buffer[pvr.width + cur_height * pvr.width * 2 + cur_width * 2] = v31.g
                     texture_buffer[pvr.width + cur_height * pvr.width * 2 + cur_width * 2 + 1] = v31.a
+
                     cur_width += 1
                     if (cur_width >= (pvr.width >> 1)):
                         break
@@ -159,7 +165,7 @@ def decompress_texture(reader, pvr):
         return texture_buffer
 
 
-def extract_texture(reader):
+def extract_texture(reader, cur_texture):
     texture_off = struct.unpack("<I", reader.read(4))[0]
 
     # save current offset
@@ -182,19 +188,24 @@ def extract_texture(reader):
 
     decompressed = decompress_texture(reader, pvr)
     file_address = int(texture_off + 0x1C)
-    write_bmp_file(decompressed, pvr.width, pvr.height, "{0:#0{1}x}.bmp".format(file_address, 8), pvr.palette)
+
+    if(name_as_add):
+        file_name = f"{file_address:#0{PAD_HEX}x}"
+    else:
+        file_name = f"{cur_texture}"
+
+    write_bmp_file(decompressed, pvr.width, pvr.height, file_name + ".bmp", pvr.palette)
     reader.seek(current_off, SEEK_SET)
 
 
-def main(directory, filename):
-    input_file = os.path.join(directory, filename)
+def main(directory, file_name):
+    input_file = os.path.join(directory, file_name)
     mem = Mem()
     v13 = 0
     v35 = 0
     v37 = 0
     v41 = 0
     v101 = 0
-    pad_hex = 8
     num_textures = 0
 
     with open(input_file, "rb") as input:
@@ -208,10 +219,32 @@ def main(directory, filename):
 
         num_textures = get_num_textures(input, v41)
 
-        print(f"ADD1: {mem.add1[0]:0{pad_hex}X} {mem.add1[1]:0{pad_hex}X} {mem.add1[2]:0{pad_hex}X}")
-        print(f"v13:  {v13:0{pad_hex}X} v101: {v101:0{pad_hex}X} v35: {v35:0{pad_hex}X}\nv41:  {v41:0{pad_hex}X}")
+        print(f"ADD1: {mem.add1[0]:0{PAD_HEX}X} {mem.add1[1]:0{PAD_HEX}X} {mem.add1[2]:0{PAD_HEX}X}")
+        print(f"v13:  {v13:0{PAD_HEX}X} v101: {v101:0{PAD_HEX}X} v35: {v35:0{PAD_HEX}X}\nv41:  {v41:0{PAD_HEX}X}")
         print("There are {} textures.\n".format(num_textures))
 
-        for _ in range(num_textures):
-            extract_texture(input)
+        for i in range(num_textures):
+            extract_texture(input, i)
         input.close()
+
+
+if __name__ == "__main__":
+    if (len(sys.argv) < 2):
+        print("Usage: psx.py filename [-a]\nOptions:\n\t-a\t: Output the filenames as addresses\n")
+        exit(1)
+
+    if (len(sys.argv) > 2):
+        name_as_add = sys.argv[2] == "-a"
+
+    file_path = sys.argv[1]
+    last_sep_index = file_path.rindex(os.path.sep)
+
+    directory = file_path[0:last_sep_index]
+    file_name = file_path[last_sep_index + 1:]
+
+    try:
+        main(directory, file_name)
+    except IOError as e:
+        print("Error: could not open {}".format(e.filename))
+    except Exception as e:
+        print(e)

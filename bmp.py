@@ -1,5 +1,6 @@
 from ctypes import sizeof
 import struct
+import numpy as np
 
 
 class BmpFileHeader:
@@ -40,14 +41,14 @@ def write_bmp_file(buffer, width, height, file_name, palette):
     extracted = Bmp()
 
     # Setup File Header
-    extracted.file.type = 19778  # BM in ANSI
-    extracted.file.size = 106 + width * height * 2
-    extracted.file.off_bits = 106
+    extracted.file.type = np.frombuffer(b'BM', dtype='<H')[0]
+    extracted.file.size = 122 + width * height * 2
+    extracted.file.off_bits = 122
 
     # Image Header
-    extracted.image.header_size = 92
+    extracted.image.header_size = 108
     extracted.image.width = width
-    extracted.image.height = height
+    extracted.image.height = -height
     extracted.image.planes = 1
     extracted.image.bit_count = 16
     extracted.image.compression = 3  # BI_BITFIELDS
@@ -77,10 +78,10 @@ def write_bmp_file(buffer, width, height, file_name, palette):
         extracted.image.blue_mask = 0x1F
         extracted.image.alpha_mask = 0
     else:
-        extracted.image.redMask = red_mask
-        extracted.image.greenMask = green_mask
-        extracted.image.blueMask = blue_mask
-        extracted.image.alphaMask = alpha_mask
+        extracted.image.red_mask = red_mask
+        extracted.image.green_mask = green_mask
+        extracted.image.blue_mask = blue_mask
+        extracted.image.alpha_mask = alpha_mask
 
     with open(file_name, "wb") as output:
         output.write(struct.pack("<H", extracted.file.type))
@@ -90,7 +91,7 @@ def write_bmp_file(buffer, width, height, file_name, palette):
         output.write(struct.pack("<I", extracted.file.off_bits))
         output.write(struct.pack("<I", extracted.image.header_size))
         output.write(struct.pack("<I", extracted.image.width))
-        output.write(struct.pack("<I", extracted.image.height))
+        output.write(struct.pack("<i", extracted.image.height))
         output.write(struct.pack("<H", extracted.image.planes))
         output.write(struct.pack("<H", extracted.image.bit_count))
         output.write(struct.pack("<I", extracted.image.compression))
@@ -108,9 +109,6 @@ def write_bmp_file(buffer, width, height, file_name, palette):
             output.write(struct.pack("<I", extracted.image.cie[i]))
         for i in range(3):
             output.write(struct.pack("<I", extracted.image.gamma[i]))
-        for i in range(len(buffer)):
-            c = (buffer[i] >> 8) & 0xff
-            f = buffer[i] & 0xff
-            output.write(struct.pack("<B", f))
-            output.write(struct.pack("<B", c))
+        for i in buffer:
+            output.write(struct.pack("<H", i))
         output.close()
