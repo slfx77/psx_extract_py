@@ -17,7 +17,7 @@ class Mem:
 
 
 class PSXPVR:
-    unk = [0] * 2
+    unk = [0] * 16
     width = 0
     height = 0
     palette = 0
@@ -99,10 +99,67 @@ def get_v31(reader, cur_texture, v30):
 
 
 def decompress_texture(reader, pvr):
-    print("decompress_texture: Not yet implemented!")
+    actual_width = pvr.width >> 1
+    actual_height = pvr.height >> 1
+    if (actual_width >= actual_height):
+        actual_width = pvr.height >> 1
+
+    v20 = actual_width - 1
+    v32 = 0
+    if (v20 & 1):
+        i = 1
+        while i & v20:
+            i *= 2
+            v32 += 1
+
+    texture_buffer = [0xFF] * (2 * pvr.width * pvr.height)
+    cur_texture = reader.tell()
+
+    if (actual_height == 0):
+        return None
+
+    # 2305 and 2306 are special in-sequence palettes
+    # (There's probably a bit that sets these, haven't looked at it)
+    in_sequence = (pvr.palette == 2305) or (pvr.palette == 2306)
+
+    if (in_sequence):
+        counter = 0
+        goal = (pvr.width * pvr.height)
+
+        while True:
+            val_a = struct.unpack("<H", reader.read(2))[0]
+            texture_buffer[counter] = val_a
+            counter += 1
+            if (counter >= goal):
+                break
+
+    # Scrambled / compressed
+    else:
+        cur_height = 0
+        cur_width = 0
+        v30 = 0
+
+        while True:
+            cur_width = 0
+            if (pvr.width >> 1):
+                while True:
+                    v30 = (bruijn[v20 & cur_height] & 0xFFFFFFFF) | 2 * bruijn[v20 & cur_width] | ((~v20 & (cur_height | cur_width)) << v32)
+                    v31 = get_v31(reader, cur_texture, v30)
+                    texture_buffer[cur_height * pvr.width * 2 + cur_width * 2] = v31.r
+                    texture_buffer[cur_height * pvr.width * 2 + cur_width * 2 + 1] = v31.b
+                    texture_buffer[pvr.width + cur_height * pvr.width * 2 + cur_width * 2] = v31.g
+                    texture_buffer[pvr.width + cur_height * pvr.width * 2 + cur_width * 2 + 1] = v31.a
+                    cur_width += 1
+                    if (cur_width >= (pvr.width >> 1)):
+                        break
+                cur_height += 1
+                if (cur_height >= (pvr.height >> 1)):
+                    break
+
+        return texture_buffer
 
 
-def extract_texture(reader, cur_texture):
+def extract_texture(reader):
     texture_off = struct.unpack("<I", reader.read(4))[0]
 
     # save current offset
@@ -110,8 +167,9 @@ def extract_texture(reader, cur_texture):
 
     pvr = PSXPVR()
     reader.seek(texture_off, SEEK_SET)
-    pvr.unk[0] = struct.unpack("<B", reader.read(1))[0]
-    pvr.unk[1] = struct.unpack("<B", reader.read(1))[0]
+
+    for i in range(16):
+        pvr.unk[i] = struct.unpack("<B", reader.read(1))[0]
     pvr.width = struct.unpack("<H", reader.read(2))[0]
     pvr.height = struct.unpack("<H", reader.read(2))[0]
     pvr.palette = struct.unpack("<I", reader.read(4))[0]
@@ -123,7 +181,8 @@ def extract_texture(reader, cur_texture):
     #     return False
 
     decompressed = decompress_texture(reader, pvr)
-    write_bmp_file(decompressed, pvr.width, pvr.height, texture_off + 0x1C, pvr.palette)
+    file_address = int(texture_off + 0x1C)
+    write_bmp_file(decompressed, pvr.width, pvr.height, "{0:#0{1}x}.bmp".format(file_address, 8), pvr.palette)
     reader.seek(current_off, SEEK_SET)
 
 
@@ -153,5 +212,6 @@ def main(directory, filename):
         print(f"v13:  {v13:0{pad_hex}X} v101: {v101:0{pad_hex}X} v35: {v35:0{pad_hex}X}\nv41:  {v41:0{pad_hex}X}")
         print("There are {} textures.\n".format(num_textures))
 
-        for i in range(num_textures):
-            extract_texture(input, i)
+        for _ in range(num_textures):
+            extract_texture(input)
+        input.close()
