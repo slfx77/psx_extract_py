@@ -159,7 +159,7 @@ def decompress_texture(reader, pvr):
                 if (cur_height >= (pvr.height >> 1)):
                     break
 
-        return texture_buffer
+    return texture_buffer
 
 
 def extract_texture(reader, cur_texture):
